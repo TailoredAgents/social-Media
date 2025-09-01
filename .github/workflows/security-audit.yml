@@ -1,0 +1,226 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Run security audit daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+jobs:
+  security-audit:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety semgrep
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+    - name: Install Node.js dependencies
+      working-directory: frontend
+      run: npm ci
+
+    # Python Security Scans
+    - name: Run Bandit Security Linter (Python)
+      run: |
+        bandit -r backend/ -f json -o bandit-report.json || true
+        bandit -r backend/ -f txt
+
+    - name: Check Python dependencies for known vulnerabilities
+      run: |
+        safety check --json --output safety-report.json || true
+        safety check
+
+    - name: Run Semgrep SAST Scanner
+      run: |
+        semgrep --config=auto backend/ --json --output=semgrep-report.json || true
+        semgrep --config=auto backend/
+
+    # Node.js Security Scans  
+    - name: Run npm audit (Node.js)
+      working-directory: frontend
+      run: |
+        npm audit --audit-level=moderate --json > npm-audit-report.json || true
+        npm audit --audit-level=moderate
+
+    - name: Run ESLint security plugin
+      working-directory: frontend
+      run: |
+        npx eslint . --ext .js,.jsx --format json --output-file eslint-security-report.json || true
+        npx eslint . --ext .js,.jsx
+
+    # OWASP Dependency Check
+    - name: Run OWASP Dependency Check
+      uses: dependency-check/Dependency-Check_Action@main
+      id: depcheck
+      with:
+        project: 'AI Social Media Agent'
+        path: '.'
+        format: 'ALL'
+        args: >
+          --enableRetired
+          --enableExperimental
+          --out reports
+
+    - name: Upload OWASP Dependency Check results
+      uses: actions/upload-artifact@v4
+      with:
+        name: dependency-check-reports
+        path: reports/
+
+    # Upload security reports as artifacts
+    - name: Upload Security Reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+          semgrep-report.json
+          frontend/npm-audit-report.json
+          frontend/eslint-security-report.json
+        retention-days: 30
+
+    # Create security summary
+    - name: Generate Security Summary
+      if: always()
+      run: |
+        echo "## 🔒 Security Audit Summary" > security-summary.md
+        echo "" >> security-summary.md
+        echo "### Python Security (Bandit)" >> security-summary.md
+        if [ -f bandit-report.json ]; then
+          python -c "
+        import json, sys
+        with open('bandit-report.json') as f:
+          data = json.load(f)
+          high = len([r for r in data.get('results', []) if r.get('issue_severity') == 'HIGH'])
+          medium = len([r for r in data.get('results', []) if r.get('issue_severity') == 'MEDIUM'])
+          low = len([r for r in data.get('results', []) if r.get('issue_severity') == 'LOW'])
+          print(f'- 🔴 High: {high}')
+          print(f'- 🟡 Medium: {medium}')
+          print(f'- 🟢 Low: {low}')
+          if high > 0: sys.exit(1)
+        " >> security-summary.md
+        else
+          echo "- ❌ Report not generated" >> security-summary.md
+        fi
+        
+        echo "" >> security-summary.md
+        echo "### Dependency Vulnerabilities (Safety)" >> security-summary.md
+        if [ -f safety-report.json ]; then
+          python -c "
+        import json
+        with open('safety-report.json') as f:
+          data = json.load(f)
+          vulns = len(data)
+          print(f'- 🔍 Vulnerabilities found: {vulns}')
+        " >> security-summary.md
+        else
+          echo "- ✅ No known vulnerabilities" >> security-summary.md
+        fi
+        
+        echo "" >> security-summary.md
+        echo "### Frontend Security (npm audit)" >> security-summary.md
+        if [ -f frontend/npm-audit-report.json ]; then
+          cd frontend && python -c "
+        import json
+        try:
+          with open('npm-audit-report.json') as f:
+            data = json.load(f)
+            if 'vulnerabilities' in data:
+              critical = data['vulnerabilities'].get('critical', 0)
+              high = data['vulnerabilities'].get('high', 0)
+              moderate = data['vulnerabilities'].get('moderate', 0)
+              low = data['vulnerabilities'].get('low', 0)
+              print(f'- 🔴 Critical: {critical}')
+              print(f'- 🔴 High: {high}')
+              print(f'- 🟡 Moderate: {moderate}')
+              print(f'- 🟢 Low: {low}')
+            else:
+              print('- ✅ No vulnerabilities detected')
+        except:
+          print('- ❓ Could not parse audit results')
+        " >> ../security-summary.md
+        else
+          echo "- ✅ No vulnerabilities detected" >> security-summary.md
+        fi
+
+    - name: Comment Security Summary on PR
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('security-summary.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: summary
+          });
+
+    # Fail the job if critical security issues are found
+    - name: Check for critical security issues
+      run: |
+        FAIL_BUILD=false
+        
+        # Check Bandit for high severity issues
+        if [ -f bandit-report.json ]; then
+          HIGH_ISSUES=$(python -c "
+        import json
+        with open('bandit-report.json') as f:
+          data = json.load(f)
+          print(len([r for r in data.get('results', []) if r.get('issue_severity') == 'HIGH']))
+        ")
+          if [ "$HIGH_ISSUES" -gt 0 ]; then
+            echo "❌ Found $HIGH_ISSUES high severity security issues in Python code"
+            FAIL_BUILD=true
+          fi
+        fi
+        
+        # Check npm audit for critical vulnerabilities
+        if [ -f frontend/npm-audit-report.json ]; then
+          cd frontend
+          CRITICAL_VULNS=$(python -c "
+        import json
+        try:
+          with open('npm-audit-report.json') as f:
+            data = json.load(f)
+            print(data.get('vulnerabilities', {}).get('critical', 0))
+        except:
+          print(0)
+        ")
+          if [ "$CRITICAL_VULNS" -gt 0 ]; then
+            echo "❌ Found $CRITICAL_VULNS critical vulnerabilities in Node.js dependencies"
+            FAIL_BUILD=true
+          fi
+        fi
+        
+        if [ "$FAIL_BUILD" = true ]; then
+          echo "🚨 Build failed due to critical security issues"
+          exit 1
+        else
+          echo "✅ No critical security issues found"
+        fi

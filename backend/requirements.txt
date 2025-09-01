@@ -1,0 +1,20 @@
+# Build Tools (Required first for Python 3.13 compatibility)
+setuptools>=68.0.0
+wheel>=0.40.0
+
+# Core Framework (minimal)
+fastapi==0.68.0
+uvicorn==0.15.0
+
+# Environment & Configuration
+python-dotenv==1.0.0
+
+# Authentication & Security - CRITICAL FOR PRODUCTION
+python-jose[cryptography]==3.3.0
+bcrypt==4.1.2
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+cryptography==42.0.8
+
+# Production
+gunicorn==21.2.0

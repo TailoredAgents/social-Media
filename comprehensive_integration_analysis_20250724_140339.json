@@ -1,0 +1,38 @@
+{
+  "timestamp": "2025-07-24T14:03:39.547742", 
+  "platform_scores": {
+    "Twitter": 0.0, 
+    "Facebook": 0.0, 
+    "Instagram": 0.0, 
+    "LinkedIn": 0.0
+  }, 
+  "recommendations": {
+    "critical_gaps": [
+      "Twitter", 
+      "Facebook", 
+      "Instagram", 
+      "LinkedIn"
+    ], 
+    "system_status": "needs_work", 
+    "ready_for_testing": false
+  }, 
+  "system_score": 0.0, 
+  "platforms_by_readiness": [
+    {
+      "platform": "Twitter", 
+      "score": 0.0
+    }, 
+    {
+      "platform": "Facebook", 
+      "score": 0.0
+    }, 
+    {
+      "platform": "Instagram", 
+      "score": 0.0
+    }, 
+    {
+      "platform": "LinkedIn", 
+      "score": 0.0
+    }
+  ]
+}

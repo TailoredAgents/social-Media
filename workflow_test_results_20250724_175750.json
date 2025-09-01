@@ -1,0 +1,488 @@
+{
+  "test_summary": {
+    "total_workflows": 5,
+    "successful_workflows": 4,
+    "partial_workflows": 1,
+    "failed_workflows": 0,
+    "overall_success_rate": 80.0,
+    "total_duration": 4.938707,
+    "executed_at": "2025-07-24T17:57:50.660444"
+  },
+  "workflow_results": [
+    {
+      "workflow_name": "content_creation_to_posting",
+      "platform": "facebook",
+      "total_steps": 4,
+      "completed_steps": 4,
+      "failed_steps": 0,
+      "total_duration": 1.813928,
+      "success_rate": 100.0,
+      "steps": [
+        {
+          "name": "ai_content_generation",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:45.719549",
+          "end_time": "2025-07-24T17:57:46.224010",
+          "duration": 0.504461,
+          "result": {
+            "text": "\ud83d\ude80 Exciting developments in AI social media automation! Our platform now supports intelligent content optimization across multiple platforms. #AI #SocialMedia #Automation",
+            "hashtags": [
+              "#AI",
+              "#SocialMedia",
+              "#Automation"
+            ],
+            "mentions": [],
+            "sentiment": "positive",
+            "engagement_score": 8.5
+          },
+          "error": null
+        },
+        {
+          "name": "content_validation",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:46.224056",
+          "end_time": "2025-07-24T17:57:46.424540",
+          "duration": 0.200484,
+          "result": {
+            "twitter": {
+              "valid": true,
+              "length": 169
+            },
+            "linkedin": {
+              "valid": true,
+              "length": 169
+            },
+            "instagram": {
+              "valid": true,
+              "length": 169
+            },
+            "facebook": {
+              "valid": true,
+              "length": 169
+            }
+          },
+          "error": null
+        },
+        {
+          "name": "platform_optimization",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:46.424609",
+          "end_time": "2025-07-24T17:57:46.725289",
+          "duration": 0.30068,
+          "result": {
+            "twitter": "\ud83d\ude80 Exciting developments in AI social media automation! Our platform now supports intelligent content optimization across multiple platforms. #AI #SocialMedia #Automation",
+            "linkedin": "\ud83d\ude80 Exciting developments in AI social media automation! Our platform now supports intelligent content optimization across multiple platforms. #AI #SocialMedia #Automation\n\nWhat are your thoughts on AI automation?",
+            "instagram": "\ud83d\ude80 Exciting developments in AI social media automation! Our platform now supports intelligent content optimization across multiple platforms. #AI #SocialMedia #Automation\n\n#TechInnovation #DigitalTransformation",
+            "facebook": "\ud83d\ude80 Exciting developments in AI social media automation! Our platform now supports intelligent content optimization across multiple platforms. #AI #SocialMedia #Automation\n\nShare your experiences with social media automation!"
+          },
+          "error": null
+        },
+        {
+          "name": "multi_platform_posting",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:46.725433",
+          "end_time": "2025-07-24T17:57:47.533167",
+          "duration": 0.807734,
+          "result": {
+            "twitter": {
+              "success": true,
+              "post_id": "sim_twitter_1753379866",
+              "url": "https://twitter.com/post/sim_1753379866"
+            },
+            "linkedin": {
+              "success": true,
+              "post_id": "sim_linkedin_1753379867",
+              "url": "https://linkedin.com/post/sim_1753379867"
+            },
+            "instagram": {
+              "success": true,
+              "post_id": "sim_instagram_1753379867",
+              "url": "https://instagram.com/post/sim_1753379867"
+            },
+            "facebook": {
+              "success": true,
+              "post_id": "sim_facebook_1753379867",
+              "url": "https://facebook.com/post/sim_1753379867"
+            }
+          },
+          "error": null
+        }
+      ],
+      "started_at": "2025-07-24T17:57:45.719274",
+      "completed_at": "2025-07-24T17:57:47.533202"
+    },
+    {
+      "workflow_name": "analytics_collection",
+      "platform": "facebook",
+      "total_steps": 3,
+      "completed_steps": 3,
+      "failed_steps": 0,
+      "total_duration": 1.209933,
+      "success_rate": 100.0,
+      "steps": [
+        {
+          "name": "post_discovery",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:47.533279",
+          "end_time": "2025-07-24T17:57:47.835888",
+          "duration": 0.302609,
+          "result": {
+            "twitter": [
+              "tweet_0",
+              "tweet_1",
+              "tweet_2",
+              "tweet_3",
+              "tweet_4"
+            ],
+            "linkedin": [
+              "post_0",
+              "post_1",
+              "post_2"
+            ],
+            "instagram": [
+              "media_0",
+              "media_1",
+              "media_2",
+              "media_3"
+            ],
+            "facebook": [
+              "fb_post_0",
+              "fb_post_1",
+              "fb_post_2",
+              "fb_post_3",
+              "fb_post_4",
+              "fb_post_5"
+            ]
+          },
+          "error": null
+        },
+        {
+          "name": "analytics_collection",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:47.835935",
+          "end_time": "2025-07-24T17:57:48.340892",
+          "duration": 0.504957,
+          "result": {
+            "twitter": {
+              "tweet_0": {
+                "impressions": 2818,
+                "engagement": 68,
+                "clicks": 43,
+                "shares": 23
+              },
+              "tweet_1": {
+                "impressions": 2846,
+                "engagement": 96,
+                "clicks": 71,
+                "shares": 51
+              },
+              "tweet_2": {
+                "impressions": 4812,
+                "engagement": 62,
+                "clicks": 37,
+                "shares": 17
+              },
+              "tweet_3": {
+                "impressions": 5530,
+                "engagement": 180,
+                "clicks": 55,
+                "shares": 35
+              },
+              "tweet_4": {
+                "impressions": 3977,
+                "engagement": 227,
+                "clicks": 102,
+                "shares": 32
+              }
+            },
+            "linkedin": {
+              "post_0": {
+                "impressions": 2272,
+                "engagement": 122,
+                "clicks": 97,
+                "shares": 27
+              },
+              "post_1": {
+                "impressions": 3854,
+                "engagement": 104,
+                "clicks": 79,
+                "shares": 9
+              },
+              "post_2": {
+                "impressions": 2769,
+                "engagement": 219,
+                "clicks": 94,
+                "shares": 24
+              }
+            },
+            "instagram": {
+              "media_0": {
+                "impressions": 5659,
+                "engagement": 109,
+                "clicks": 84,
+                "shares": 14
+              },
+              "media_1": {
+                "impressions": 5601,
+                "engagement": 51,
+                "clicks": 26,
+                "shares": 6
+              },
+              "media_2": {
+                "impressions": 2175,
+                "engagement": 225,
+                "clicks": 100,
+                "shares": 30
+              },
+              "media_3": {
+                "impressions": 1445,
+                "engagement": 95,
+                "clicks": 70,
+                "shares": 50
+              }
+            },
+            "facebook": {
+              "fb_post_0": {
+                "impressions": 1551,
+                "engagement": 201,
+                "clicks": 76,
+                "shares": 6
+              },
+              "fb_post_1": {
+                "impressions": 5415,
+                "engagement": 65,
+                "clicks": 40,
+                "shares": 20
+              },
+              "fb_post_2": {
+                "impressions": 4379,
+                "engagement": 229,
+                "clicks": 104,
+                "shares": 34
+              },
+              "fb_post_3": {
+                "impressions": 4642,
+                "engagement": 92,
+                "clicks": 67,
+                "shares": 47
+              },
+              "fb_post_4": {
+                "impressions": 5755,
+                "engagement": 205,
+                "clicks": 80,
+                "shares": 10
+              },
+              "fb_post_5": {
+                "impressions": 1362,
+                "engagement": 212,
+                "clicks": 87,
+                "shares": 17
+              }
+            }
+          },
+          "error": null
+        },
+        {
+          "name": "data_processing",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:48.340942",
+          "end_time": "2025-07-24T17:57:48.743167",
+          "duration": 0.402225,
+          "result": {
+            "twitter": {
+              "total_posts": 5,
+              "total_impressions": 19983,
+              "total_engagement": 633,
+              "engagement_rate": 3.167692538657859,
+              "avg_impressions": 3996.6
+            },
+            "linkedin": {
+              "total_posts": 3,
+              "total_impressions": 8895,
+              "total_engagement": 445,
+              "engagement_rate": 5.002810567734682,
+              "avg_impressions": 2965.0
+            },
+            "instagram": {
+              "total_posts": 4,
+              "total_impressions": 14880,
+              "total_engagement": 480,
+              "engagement_rate": 3.225806451612903,
+              "avg_impressions": 3720.0
+            },
+            "facebook": {
+              "total_posts": 6,
+              "total_impressions": 23104,
+              "total_engagement": 1004,
+              "engagement_rate": 4.345567867036011,
+              "avg_impressions": 3850.6666666666665
+            }
+          },
+          "error": null
+        }
+      ],
+      "started_at": "2025-07-24T17:57:47.533264",
+      "completed_at": "2025-07-24T17:57:48.743197"
+    },
+    {
+      "workflow_name": "multi_platform_posting",
+      "platform": "all_platforms",
+      "total_steps": 2,
+      "completed_steps": 2,
+      "failed_steps": 0,
+      "total_duration": 0.50595,
+      "success_rate": 100.0,
+      "steps": [
+        {
+          "name": "authentication_check",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:48.743591",
+          "end_time": "2025-07-24T17:57:48.944738",
+          "duration": 0.201147,
+          "result": {
+            "twitter": "authenticated",
+            "linkedin": "authenticated",
+            "instagram": "authenticated",
+            "facebook": "authenticated"
+          },
+          "error": null
+        },
+        {
+          "name": "concurrent_posting",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:48.944789",
+          "end_time": "2025-07-24T17:57:49.249214",
+          "duration": 0.304425,
+          "result": {
+            "twitter": {
+              "platform": "twitter",
+              "success": true,
+              "post_id": "twitter_concurrent_1753379869",
+              "response_time": 0.3
+            },
+            "linkedin": {
+              "platform": "linkedin",
+              "success": true,
+              "post_id": "linkedin_concurrent_1753379869",
+              "response_time": 0.3
+            },
+            "instagram": {
+              "platform": "instagram",
+              "success": true,
+              "post_id": "instagram_concurrent_1753379869",
+              "response_time": 0.3
+            },
+            "facebook": {
+              "platform": "facebook",
+              "success": true,
+              "post_id": "facebook_concurrent_1753379869",
+              "response_time": 0.3
+            }
+          },
+          "error": null
+        }
+      ],
+      "started_at": "2025-07-24T17:57:48.743293",
+      "completed_at": "2025-07-24T17:57:49.249243"
+    },
+    {
+      "workflow_name": "content_optimization",
+      "platform": "optimization_engine",
+      "total_steps": 2,
+      "completed_steps": 2,
+      "failed_steps": 0,
+      "total_duration": 0.704261,
+      "success_rate": 100.0,
+      "steps": [
+        {
+          "name": "content_analysis",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:49.249321",
+          "end_time": "2025-07-24T17:57:49.650861",
+          "duration": 0.40154,
+          "result": {
+            "sentiment": "positive",
+            "topics": [
+              "ai",
+              "automation",
+              "social media"
+            ],
+            "engagement_prediction": 8.2,
+            "readability_score": 7.5,
+            "hashtag_effectiveness": 9.1,
+            "optimal_posting_time": "2024-01-15T14:30:00Z"
+          },
+          "error": null
+        },
+        {
+          "name": "ab_testing_setup",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:49.650909",
+          "end_time": "2025-07-24T17:57:49.953440",
+          "duration": 0.302531,
+          "result": {
+            "variant_a": {
+              "text": "Original content with standard approach",
+              "hashtags": [
+                "#AI",
+                "#Tech"
+              ],
+              "predicted_engagement": 7.5
+            },
+            "variant_b": {
+              "text": "Optimized content with AI-enhanced approach",
+              "hashtags": [
+                "#AI",
+                "#Innovation",
+                "#Future"
+              ],
+              "predicted_engagement": 8.7
+            },
+            "test_duration": "24_hours",
+            "success_metric": "engagement_rate"
+          },
+          "error": null
+        }
+      ],
+      "started_at": "2025-07-24T17:57:49.249296",
+      "completed_at": "2025-07-24T17:57:49.953557"
+    },
+    {
+      "workflow_name": "error_recovery",
+      "platform": "error_handling",
+      "total_steps": 2,
+      "completed_steps": 1,
+      "failed_steps": 1,
+      "total_duration": 0.704635,
+      "success_rate": 50.0,
+      "steps": [
+        {
+          "name": "api_failure_simulation",
+          "status": "failed",
+          "start_time": "2025-07-24T17:57:49.953659",
+          "end_time": "2025-07-24T17:57:50.157883",
+          "duration": 0.204224,
+          "result": null,
+          "error": "Simulated API rate limit exceeded"
+        },
+        {
+          "name": "error_recovery",
+          "status": "completed",
+          "start_time": "2025-07-24T17:57:50.157933",
+          "end_time": "2025-07-24T17:57:50.658220",
+          "duration": 0.500287,
+          "result": {
+            "recovery_strategy": "exponential_backoff",
+            "retry_attempts": 3,
+            "recovery_time": 0.5,
+            "fallback_used": false,
+            "final_status": "recovered"
+          },
+          "error": null
+        }
+      ],
+      "started_at": "2025-07-24T17:57:49.953633",
+      "completed_at": "2025-07-24T17:57:50.658268"
+    }
+  ]
+}

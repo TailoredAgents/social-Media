@@ -1,0 +1,91 @@
+/* Tailored Agents Dashboard Styles */
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Glassmorphism effects */
+.glass {
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+/* Line clamp utility */
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* React Calendar customizations */
+.react-calendar {
+  background: transparent !important;
+  border: none !important;
+  font-family: inherit !important;
+}
+
+.react-calendar__tile {
+  border-radius: 8px !important;
+  transition: all 0.2s ease !important;
+}
+
+.react-calendar__tile:hover {
+  background: rgba(0, 128, 128, 0.1) !important;
+}
+
+.react-calendar__tile--active {
+  background: #008080 !important;
+  color: white !important;
+}
+
+/* Chart container adjustments */
+.chart-container {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.chart-container canvas {
+  max-height: 100% !important;
+}
+
+/* Accessibility improvements */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

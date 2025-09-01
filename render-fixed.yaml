@@ -1,0 +1,120 @@
+# Render Blueprint for AI Social Media Content Agent
+# Deploy with: render-cli deploy --blueprint render-fixed.yaml
+
+services:
+  # Backend API Service
+  - type: web
+    name: lily-ai-socialmedia-backend
+    env: python
+    region: oregon
+    plan: free
+    runtime: python-3.12.6
+    rootDirectory: .
+    buildCommand: |
+      echo "🏗️ Building AI Social Media Content Agent..."
+      echo "Current directory: $(pwd)"
+      echo "Directory contents: $(ls -la)"
+      echo "Python version: $(python --version)"
+      echo "Installing dependencies from requirements.txt..."
+      pip install --upgrade pip setuptools wheel
+      pip install -r requirements.txt
+      echo "✅ Build completed successfully"
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: lily-ai-socialmedia-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: lily-ai-socialmedia-redis
+          property: connectionString
+      # Core Secret Key
+      - key: SECRET_KEY
+        value: Cc5NOfxEP9KrY0d2k9+tXvZmGpR7sJ8wL3nQ6uA4eF1iH9kN2pS5vY8zA3dG6j
+      # API Keys (set these in Render dashboard manually)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SERPER_API_KEY
+        sync: false
+      # Social Media API Keys
+      - key: TWITTER_API_KEY
+        sync: false
+      - key: TWITTER_API_SECRET
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN
+        sync: false
+      - key: TWITTER_ACCESS_TOKEN_SECRET
+        sync: false
+      - key: TWITTER_CLIENT_ID
+        sync: false
+      - key: TWITTER_CLIENT_SECRET
+        sync: false
+      - key: TWITTER_BEARER_TOKEN
+        sync: false
+      - key: LINKEDIN_CLIENT_ID
+        sync: false
+      - key: LINKEDIN_CLIENT_SECRET
+        sync: false
+      - key: INSTAGRAM_APP_ID
+        sync: false
+      - key: INSTAGRAM_APP_SECRET
+        sync: false
+      - key: FACEBOOK_APP_ID
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
+      # CORS Configuration
+      - key: CORS_ORIGINS
+        value: https://www.lily-ai-socialmedia.com,https://lily-ai-socialmedia-frontend.onrender.com
+      - key: ALLOWED_HOSTS
+        value: lily-ai-socialmedia-backend.onrender.com,localhost,127.0.0.1
+
+  # Frontend Service
+  - type: web
+    name: lily-ai-socialmedia-frontend
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: |
+      cd frontend &&
+      npm ci &&
+      npm run build
+    startCommand: |
+      cd frontend &&
+      npm run preview -- --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://lily-ai-socialmedia-backend.onrender.com
+      - key: VITE_WS_BASE_URL
+        value: wss://lily-ai-socialmedia-backend.onrender.com
+      - key: VITE_APP_NAME
+        value: Lily AI Social Media
+      - key: VITE_APP_DOMAIN
+        value: lily-ai-socialmedia.com
+      - key: VITE_APP_URL
+        value: https://www.lily-ai-socialmedia.com
+      - key: VITE_ENVIRONMENT
+        value: production
+
+  # Redis Cache Service
+  - type: redis
+    name: lily-ai-socialmedia-redis
+    region: oregon
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+
+# Database Service
+databases:
+  - name: lily-ai-socialmedia-db
+    databaseName: lily_ai_socialmedia
+    region: oregon
+    plan: free

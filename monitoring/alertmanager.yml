@@ -1,0 +1,89 @@
+# Alertmanager configuration for AI Social Media Content Agent
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@ai-social-media.com'
+
+# The directory from which notification templates are read.
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# The root route on which each incoming alert enters.
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'web.hook'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 0s
+      repeat_interval: 5m
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      repeat_interval: 30m
+
+# Inhibition rules allow to mute a set of alerts given that another alert is firing.
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+receivers:
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://127.0.0.1:5001/'
+        
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'admin@ai-social-media.com'
+        subject: '🚨 Critical Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Instance: {{ .Labels.instance }}
+          Severity: {{ .Labels.severity }}
+          Start Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#critical-alerts'
+        title: '🚨 Critical Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          *Severity:* {{ .Labels.severity }}
+          {{ end }}
+    pagerduty_configs:
+      - routing_key: 'YOUR_PAGERDUTY_INTEGRATION_KEY'
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'team@ai-social-media.com'
+        subject: '⚠️ Warning Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Instance: {{ .Labels.instance }}
+          Severity: {{ .Labels.severity }}
+          Start Time: {{ .StartsAt }}
+          {{ end }}
+    slack_configs:
+      - api_url: 'YOUR_SLACK_WEBHOOK_URL'
+        channel: '#monitoring'
+        title: '⚠️ Warning Alert'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Instance:* {{ .Labels.instance }}
+          {{ end }}

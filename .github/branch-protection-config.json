@@ -1,0 +1,33 @@
+{
+  "protection": {
+    "required_status_checks": {
+      "strict": true,
+      "contexts": [
+        "Backend Tests / test",
+        "Backend Tests / lint-and-format", 
+        "Backend Tests / api-tests",
+        "Frontend CI / test",
+        "Frontend CI / security-scan",
+        "Code Quality / frontend-quality",
+        "Code Quality / backend-quality",
+        "Security Scan / frontend-security",
+        "Security Scan / backend-security",
+        "Security Scan / codeql-analysis"
+      ]
+    },
+    "enforce_admins": false,
+    "required_pull_request_reviews": {
+      "required_approving_review_count": 1,
+      "dismiss_stale_reviews": true,
+      "require_code_owner_reviews": false,
+      "require_last_push_approval": true
+    },
+    "required_linear_history": false,
+    "allow_force_pushes": false,
+    "allow_deletions": false,
+    "block_creations": false,
+    "required_conversation_resolution": true,
+    "lock_branch": false,
+    "allow_fork_syncing": true
+  }
+}

@@ -1,0 +1,443 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches: [ develop, staging ]
+  workflow_dispatch:
+    inputs:
+      deploy_backend:
+        description: 'Deploy backend services'
+        type: boolean
+        default: true
+      deploy_frontend:
+        description: 'Deploy frontend application'
+        type: boolean
+        default: true
+      run_migrations:
+        description: 'Run database migrations'
+        type: boolean
+        default: true
+
+env:
+  ENVIRONMENT: staging
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_BACKEND: ai-social-media-backend
+  ECR_REPOSITORY_FRONTEND: ai-social-media-frontend
+  ECS_SERVICE_BACKEND: ai-social-media-backend-staging
+  ECS_SERVICE_FRONTEND: ai-social-media-frontend-staging
+  ECS_CLUSTER: ai-social-media-staging
+  KUBERNETES_NAMESPACE: ai-social-media-staging
+
+jobs:
+  pre-deployment-checks:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_backend: ${{ steps.check.outputs.deploy_backend }}
+      deploy_frontend: ${{ steps.check.outputs.deploy_frontend }}
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Determine deployment targets
+      id: check
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "deploy_backend=${{ inputs.deploy_backend }}" >> $GITHUB_OUTPUT
+          echo "deploy_frontend=${{ inputs.deploy_frontend }}" >> $GITHUB_OUTPUT
+        else
+          # Auto-detect changes for push events
+          echo "deploy_backend=true" >> $GITHUB_OUTPUT
+          echo "deploy_frontend=true" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Run pre-deployment validation
+      run: |
+        echo "🔍 Running pre-deployment checks..."
+        
+        # Check for any pending migrations
+        if [ -d "backend/migrations" ]; then
+          echo "✅ Migration files found"
+        fi
+        
+        # Validate environment configuration
+        if [ -f ".env.staging" ]; then
+          echo "✅ Staging environment configuration found"
+        else
+          echo "⚠️ No staging environment configuration found"
+        fi
+        
+        echo "✅ Pre-deployment checks passed"
+
+  build-and-push-backend:
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    if: needs.pre-deployment-checks.outputs.deploy_backend == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Build backend Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd backend
+        docker build \
+          --build-arg ENVIRONMENT=staging \
+          --build-arg BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ') \
+          --build-arg VCS_REF=${{ github.sha }} \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:staging-latest \
+          .
+          
+    - name: Run security scan on image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy:latest image \
+          --severity HIGH,CRITICAL \
+          --exit-code 0 \
+          $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+          
+    - name: Push backend image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:staging-latest
+        
+    - name: Generate backend deployment manifest
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        mkdir -p deployment
+        cat > deployment/backend-deployment.json <<EOF
+        {
+          "image": "$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG",
+          "environment": "staging",
+          "version": "${{ github.sha }}",
+          "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+        }
+        EOF
+        
+    - name: Upload deployment manifest
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-deployment-manifest
+        path: deployment/backend-deployment.json
+        retention-days: 30
+
+  build-and-push-frontend:
+    runs-on: ubuntu-latest
+    needs: pre-deployment-checks
+    if: needs.pre-deployment-checks.outputs.deploy_frontend == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+        
+    - name: Install dependencies
+      run: |
+        cd frontend
+        npm ci
+        
+    - name: Build frontend application
+      env:
+        REACT_APP_API_URL: ${{ secrets.STAGING_API_URL }}
+        REACT_APP_ENVIRONMENT: staging
+        NODE_ENV: production
+      run: |
+        cd frontend
+        npm run build
+        
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Build frontend Docker image
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd frontend
+        docker build \
+          --build-arg ENVIRONMENT=staging \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG \
+          -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:staging-latest \
+          .
+          
+    - name: Push frontend image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:staging-latest
+        
+    - name: Upload to S3 (Static hosting option)
+      run: |
+        aws s3 sync frontend/dist/ s3://${{ secrets.STAGING_S3_BUCKET }}/ \
+          --delete \
+          --cache-control "public, max-age=3600" \
+          --exclude "*.map" \
+          --metadata-directive REPLACE
+          
+    - name: Invalidate CloudFront
+      run: |
+        aws cloudfront create-invalidation \
+          --distribution-id ${{ secrets.STAGING_CLOUDFRONT_DISTRIBUTION_ID }} \
+          --paths "/*"
+
+  run-database-migrations:
+    runs-on: ubuntu-latest
+    needs: [build-and-push-backend]
+    if: inputs.run_migrations == true
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        pip install alembic psycopg2-binary sqlalchemy
+        
+    - name: Run database migrations
+      env:
+        DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      run: |
+        echo "🔄 Running database migrations for staging..."
+        cd backend
+        
+        # Check current migration status
+        alembic current
+        
+        # Run migrations
+        alembic upgrade head
+        
+        echo "✅ Database migrations completed successfully"
+        
+    - name: Verify migration status
+      env:
+        DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+      run: |
+        cd backend
+        alembic current
+
+  deploy-backend-ecs:
+    runs-on: ubuntu-latest
+    needs: [build-and-push-backend, run-database-migrations]
+    if: needs.pre-deployment-checks.outputs.deploy_backend == 'true'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Download task definition
+      run: |
+        aws ecs describe-task-definition \
+          --task-definition ai-social-media-backend-staging \
+          --query taskDefinition > task-definition.json
+          
+    - name: Update task definition
+      id: task-def
+      uses: aws-actions/amazon-ecs-render-task-definition@v1
+      with:
+        task-definition: task-definition.json
+        container-name: backend
+        image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY_BACKEND }}:${{ github.sha }}
+        
+    - name: Deploy to ECS
+      uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      with:
+        task-definition: ${{ steps.task-def.outputs.task-definition }}
+        service: ${{ env.ECS_SERVICE_BACKEND }}
+        cluster: ${{ env.ECS_CLUSTER }}
+        wait-for-service-stability: true
+        
+    - name: Update service auto-scaling
+      run: |
+        aws application-autoscaling register-scalable-target \
+          --service-namespace ecs \
+          --scalable-dimension ecs:service:DesiredCount \
+          --resource-id service/${{ env.ECS_CLUSTER }}/${{ env.ECS_SERVICE_BACKEND }} \
+          --min-capacity 2 \
+          --max-capacity 10
+
+  deploy-backend-kubernetes:
+    runs-on: ubuntu-latest
+    needs: [build-and-push-backend, run-database-migrations]
+    if: needs.pre-deployment-checks.outputs.deploy_backend == 'true' && false
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig \
+          --region ${{ env.AWS_REGION }} \
+          --name ai-social-media-staging
+          
+    - name: Deploy to Kubernetes
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        kubectl set image deployment/backend \
+          backend=$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG \
+          -n ${{ env.KUBERNETES_NAMESPACE }}
+          
+        kubectl rollout status deployment/backend \
+          -n ${{ env.KUBERNETES_NAMESPACE }}
+          
+    - name: Update ConfigMap
+      run: |
+        kubectl create configmap backend-config \
+          --from-env-file=.env.staging \
+          -n ${{ env.KUBERNETES_NAMESPACE }} \
+          --dry-run=client -o yaml | kubectl apply -f -
+
+  health-check:
+    runs-on: ubuntu-latest
+    needs: [deploy-backend-ecs, deploy-backend-kubernetes]
+    if: always()
+    
+    steps:
+    - name: Wait for deployment stabilization
+      run: sleep 60
+      
+    - name: Health check - Backend API
+      run: |
+        echo "🏥 Checking backend API health..."
+        
+        HEALTH_URL="${{ secrets.STAGING_API_URL }}/health"
+        MAX_RETRIES=10
+        RETRY_DELAY=10
+        
+        for i in $(seq 1 $MAX_RETRIES); do
+          echo "Attempt $i of $MAX_RETRIES..."
+          
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Backend API is healthy"
+            break
+          else
+            echo "❌ Health check failed with status: $HTTP_STATUS"
+            
+            if [ $i -eq $MAX_RETRIES ]; then
+              echo "Health check failed after $MAX_RETRIES attempts"
+              exit 1
+            fi
+            
+            echo "Retrying in $RETRY_DELAY seconds..."
+            sleep $RETRY_DELAY
+          fi
+        done
+        
+    - name: Run smoke tests
+      run: |
+        echo "🔥 Running smoke tests..."
+        
+        # Test API endpoints
+        curl -f "${{ secrets.STAGING_API_URL }}/docs" || exit 1
+        curl -f "${{ secrets.STAGING_API_URL }}/openapi.json" || exit 1
+        
+        echo "✅ Smoke tests passed"
+
+  post-deployment:
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: success()
+    
+    steps:
+    - name: Tag deployment
+      run: |
+        git config --global user.email "ci@ai-social-media.com"
+        git config --global user.name "CI Bot"
+        
+        TAG_NAME="staging-deploy-$(date +%Y%m%d-%H%M%S)"
+        git tag -a "$TAG_NAME" -m "Staging deployment ${{ github.sha }}"
+        git push origin "$TAG_NAME"
+        
+    - name: Update deployment tracking
+      run: |
+        DEPLOYMENT_DATA=$(cat <<EOF
+        {
+          "environment": "staging",
+          "version": "${{ github.sha }}",
+          "timestamp": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+          "deployed_by": "${{ github.actor }}",
+          "trigger": "${{ github.event_name }}",
+          "status": "success"
+        }
+        EOF
+        )
+        
+        echo "$DEPLOYMENT_DATA" > deployment-record.json
+        
+    - name: Notify deployment success
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#deployments'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        text: |
+          ✅ Staging Deployment Successful!
+          
+          Environment: Staging
+          Version: ${{ github.sha }}
+          Deployed by: ${{ github.actor }}
+          
+          Backend: ${{ needs.pre-deployment-checks.outputs.deploy_backend == 'true' && '✅ Deployed' || '⏭️ Skipped' }}
+          Frontend: ${{ needs.pre-deployment-checks.outputs.deploy_frontend == 'true' && '✅ Deployed' || '⏭️ Skipped' }}
+          
+          View deployment: ${{ secrets.STAGING_URL }}

@@ -1,0 +1,222 @@
+version: '3.8'
+
+services:
+  # Main application
+  app:
+    build: .
+    container_name: aisocial-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://aisocial:${POSTGRES_PASSWORD}@postgres:5432/aisocial_db
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AUTH0_DOMAIN=${AUTH0_DOMAIN}
+      - AUTH0_CLIENT_ID=${AUTH0_CLIENT_ID}
+      - AUTH0_CLIENT_SECRET=${AUTH0_CLIENT_SECRET}
+      - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
+      - TWITTER_CLIENT_SECRET=${TWITTER_CLIENT_SECRET}
+      # LinkedIn removed - too restrictive API
+      # - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID}
+      # - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET}
+      - INSTAGRAM_CLIENT_ID=${INSTAGRAM_CLIENT_ID}
+      - INSTAGRAM_CLIENT_SECRET=${INSTAGRAM_CLIENT_SECRET}
+      - FACEBOOK_CLIENT_ID=${FACEBOOK_CLIENT_ID}
+      - FACEBOOK_CLIENT_SECRET=${FACEBOOK_CLIENT_SECRET}
+    volumes:
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL database with pgvector support
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: aisocial-postgres
+    environment:
+      - POSTGRES_DB=aisocial_db
+      - POSTGRES_USER=aisocial
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aisocial -d aisocial_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and session storage
+  redis:
+    image: redis:7-alpine
+    container_name: aisocial-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+
+  # Celery worker for background tasks
+  celery-worker:
+    build: .
+    container_name: aisocial-celery-worker
+    command: celery -A backend.tasks.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://aisocial:${POSTGRES_PASSWORD}@postgres:5432/aisocial_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
+      - TWITTER_CLIENT_SECRET=${TWITTER_CLIENT_SECRET}
+      # LinkedIn removed - too restrictive API
+      # - LINKEDIN_CLIENT_ID=${LINKEDIN_CLIENT_ID}
+      # - LINKEDIN_CLIENT_SECRET=${LINKEDIN_CLIENT_SECRET}
+      - INSTAGRAM_CLIENT_ID=${INSTAGRAM_CLIENT_ID}
+      - INSTAGRAM_CLIENT_SECRET=${INSTAGRAM_CLIENT_SECRET}
+      - FACEBOOK_CLIENT_ID=${FACEBOOK_CLIENT_ID}
+      - FACEBOOK_CLIENT_SECRET=${FACEBOOK_CLIENT_SECRET}
+    volumes:
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "backend.tasks.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Celery beat scheduler
+  celery-beat:
+    build: .
+    container_name: aisocial-celery-beat
+    command: celery -A backend.tasks.celery_app beat --loglevel=info
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=postgresql://aisocial:${POSTGRES_PASSWORD}@postgres:5432/aisocial_db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    volumes:
+      - app_logs:/app/logs
+      - celery_beat_data:/app/celerybeat-schedule
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+
+  # Nginx reverse proxy
+  nginx:
+    image: nginx:alpine
+    container_name: aisocial-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring with Prometheus (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: aisocial-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: aisocial-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - aisocial-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  app_logs:
+    driver: local
+  app_uploads:
+    driver: local
+  celery_beat_data:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  aisocial-network:
+    driver: bridge

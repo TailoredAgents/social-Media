@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  app:
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=1
+      - DATABASE_URL=sqlite:///./socialmedia.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FEATURE_FLAGS=USE_STUB_INTEGRATIONS=1,WORKFLOW_V2=1
+      - OTEL_SERVICE_NAME=ai-social-agent-api
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - VITE_API_BASE_URL=http://localhost:8000
+    volumes:
+      - ".:/app"
+    depends_on:
+      - redis
+
+  celery-worker:
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=sqlite:///./socialmedia.db
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - FEATURE_FLAGS=USE_STUB_INTEGRATIONS=1
+      - OTEL_SERVICE_NAME=ai-social-agent-worker
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+    volumes:
+      - ".:/app"
+    depends_on:
+      - redis
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.101.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./ops/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"

@@ -1,0 +1,29 @@
+Social Media Integration Test Report
+Generated: 2025-07-24 14:01:09
+
+Import Results:
+  backend.integrations.instagram_client: FAILED
+  backend.integrations.twitter_client: FAILED
+  backend.auth.social_oauth: ERROR
+  backend.integrations.facebook_client: FAILED
+  backend.integrations.linkedin_client: FAILED
+
+Client Instantiation:
+  Twitter: FAILED
+  LinkedIn: FAILED
+  Instagram: FAILED
+  Facebook: FAILED
+
+Method Availability:
+
+Configuration Status:
+  Twitter: 0.0% configured
+  Facebook: 0.0% configured
+  Instagram: 0.0% configured
+  LinkedIn: 0.0% configured
+
+Overall Scores:
+  Twitter: 0.0%
+  Facebook: 0.0%
+  Instagram: 0.0%
+  LinkedIn: 0.0%

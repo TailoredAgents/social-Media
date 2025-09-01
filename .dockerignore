@@ -1,0 +1,89 @@
+# Force cache invalidation - timestamp: 2025-08-20-21:09
+# Git
+.git
+.gitignore
+README.md
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.coverage.*
+.pytest_cache
+nosetests.xml
+.venv
+venv/
+.env
+
+# Development files
+.env.example
+*.log
+*.sqlite
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node.js (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Test files
+tests/
+test_*.py
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Uploads and logs (will be mounted as volumes)
+uploads/
+logs/
+*.log
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Development tools
+.pre-commit-config.yaml
+.gitattributes
+.editorconfig
+
+# Security
+*.pem
+*.key
+*.crt

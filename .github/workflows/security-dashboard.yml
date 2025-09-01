@@ -1,0 +1,252 @@
+name: Security Dashboard
+
+on:
+  schedule:
+    # Generate security dashboard daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Security Audit", "CodeQL Security Analysis"]
+    types:
+      - completed
+
+jobs:
+  security-dashboard:
+    name: Generate Security Dashboard
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests jinja2 pyyaml
+
+    - name: Generate Security Dashboard
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python -c "
+        import json
+        import requests
+        import yaml
+        from datetime import datetime, timedelta
+        from jinja2 import Template
+        import os
+        
+        # GitHub API setup
+        headers = {'Authorization': f'token {os.environ[\"GITHUB_TOKEN\"]}'}
+        repo = '${{ github.repository }}'
+        
+        # Fetch security alerts
+        def fetch_security_alerts():
+            try:
+                response = requests.get(
+                    f'https://api.github.com/repos/{repo}/code-scanning/alerts',
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return []
+            except:
+                return []
+        
+        # Fetch dependency alerts
+        def fetch_dependency_alerts():
+            try:
+                response = requests.get(
+                    f'https://api.github.com/repos/{repo}/dependabot/alerts',
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    return response.json()
+                return []
+            except:
+                return []
+        
+        # Fetch workflow runs
+        def fetch_workflow_runs():
+            try:
+                response = requests.get(
+                    f'https://api.github.com/repos/{repo}/actions/runs?per_page=10',
+                    headers=headers
+                )
+                if response.status_code == 200:
+                    return response.json().get('workflow_runs', [])
+                return []
+            except:
+                return []
+        
+        # Generate dashboard data
+        security_alerts = fetch_security_alerts()
+        dependency_alerts = fetch_dependency_alerts()
+        workflow_runs = fetch_workflow_runs()
+        
+        # Security metrics
+        security_metrics = {
+            'critical_alerts': len([a for a in security_alerts if a.get('rule', {}).get('security_severity_level') == 'critical']),
+            'high_alerts': len([a for a in security_alerts if a.get('rule', {}).get('security_severity_level') == 'high']),
+            'medium_alerts': len([a for a in security_alerts if a.get('rule', {}).get('security_severity_level') == 'medium']),
+            'low_alerts': len([a for a in security_alerts if a.get('rule', {}).get('security_severity_level') == 'low']),
+            'total_alerts': len(security_alerts),
+            'dependency_alerts': len(dependency_alerts),
+            'open_alerts': len([a for a in security_alerts if a.get('state') == 'open']),
+            'last_scan': datetime.utcnow().isoformat()
+        }
+        
+        # Security workflow status
+        security_workflows = [run for run in workflow_runs if 'security' in run.get('name', '').lower() or 'codeql' in run.get('name', '').lower()]
+        
+        dashboard_template = '''
+        # 🔒 Security Dashboard
+        
+        **Last Updated:** {{ last_scan }}
+        
+        ## 📊 Security Metrics Overview
+        
+        | Metric | Count | Status |
+        |--------|-------|--------|
+        | 🔴 Critical Alerts | {{ critical_alerts }} | {{ \"🚨 URGENT\" if critical_alerts > 0 else \"✅ GOOD\" }} |
+        | 🟠 High Severity | {{ high_alerts }} | {{ \"⚠️ REVIEW\" if high_alerts > 0 else \"✅ GOOD\" }} |
+        | 🟡 Medium Severity | {{ medium_alerts }} | {{ \"📋 MONITOR\" if medium_alerts > 5 else \"✅ GOOD\" }} |
+        | 🟢 Low Severity | {{ low_alerts }} | {{ \"📝 TRACK\" if low_alerts > 10 else \"✅ GOOD\" }} |
+        | 📦 Dependency Alerts | {{ dependency_alerts }} | {{ \"🔄 UPDATE\" if dependency_alerts > 0 else \"✅ GOOD\" }} |
+        | 🔓 Open Alerts | {{ open_alerts }} | {{ \"🚨 ACTION NEEDED\" if open_alerts > 0 else \"✅ ALL RESOLVED\" }} |
+        
+        ## 🎯 Security Score
+        
+        {% set score = 100 - (critical_alerts * 25) - (high_alerts * 10) - (medium_alerts * 2) - (low_alerts * 0.5) - (dependency_alerts * 5) %}
+        {% set score = [score, 0] | max %}
+        
+        **Current Score: {{ \"%.1f\" | format(score) }}/100**
+        
+        {% if score >= 95 %}
+        🏆 **EXCELLENT** - Outstanding security posture
+        {% elif score >= 85 %}
+        🥇 **VERY GOOD** - Strong security with minor improvements needed
+        {% elif score >= 70 %}
+        🥈 **GOOD** - Solid security foundation with some areas to address
+        {% elif score >= 50 %}
+        🥉 **FAIR** - Security needs attention and improvement
+        {% else %}
+        🚨 **POOR** - Immediate security attention required
+        {% endif %}
+        
+        ## 🔍 Recent Security Activity
+        
+        ### Last 7 Days
+        {% for run in security_workflows[:5] %}
+        - **{{ run.get(\"name\", \"Unknown\") }}**: {{ run.get(\"conclusion\", \"unknown\").title() }} ({{ run.get(\"created_at\", \"\")[:10] }})
+        {% endfor %}
+        
+        ## 📋 Action Items
+        
+        ### Immediate Actions Required
+        {% if critical_alerts > 0 %}
+        - 🚨 **CRITICAL**: Address {{ critical_alerts }} critical security alert(s) immediately
+        {% endif %}
+        {% if high_alerts > 0 %}
+        - ⚠️ **HIGH**: Review and resolve {{ high_alerts }} high severity alert(s)
+        {% endif %}
+        {% if dependency_alerts > 0 %}
+        - 📦 **DEPENDENCIES**: Update {{ dependency_alerts }} vulnerable dependenc(y/ies)
+        {% endif %}
+        
+        ### Ongoing Monitoring
+        {% if medium_alerts > 0 %}
+        - 📋 Monitor {{ medium_alerts }} medium severity alert(s)
+        {% endif %}
+        {% if low_alerts > 0 %}
+        - 📝 Track {{ low_alerts }} low severity alert(s)
+        {% endif %}
+        
+        ## 🛡️ Security Best Practices Status
+        
+        - ✅ Automated security scanning enabled
+        - ✅ Dependency vulnerability monitoring active
+        - ✅ CodeQL analysis configured
+        - ✅ Security audit pipeline operational
+        - {% if dependency_alerts == 0 %}✅{% else %}❌{% endif %} Dependencies up to date
+        - {% if open_alerts == 0 %}✅{% else %}❌{% endif %} No open security alerts
+        
+        ## 📈 Trends (Last 30 Days)
+        
+        *Note: Historical trend data requires additional API calls and storage*
+        
+        ## 🔗 Quick Links
+        
+        - [Security Alerts](https://github.com/{{ repo }}/security/code-scanning)
+        - [Dependency Alerts](https://github.com/{{ repo }}/security/dependabot)
+        - [Security Policies](https://github.com/{{ repo }}/security/policy)
+        - [Workflow Runs](https://github.com/{{ repo }}/actions)
+        
+        ---
+        
+        🤖 *This dashboard is automatically generated by the Security Dashboard workflow*
+        '''
+        
+        template = Template(dashboard_template)
+        dashboard_content = template.render(
+            last_scan=datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC'),
+            critical_alerts=security_metrics['critical_alerts'],
+            high_alerts=security_metrics['high_alerts'],
+            medium_alerts=security_metrics['medium_alerts'],
+            low_alerts=security_metrics['low_alerts'],
+            dependency_alerts=security_metrics['dependency_alerts'],
+            open_alerts=security_metrics['open_alerts'],
+            security_workflows=security_workflows,
+            repo=repo
+        )
+        
+        # Write dashboard
+        with open('SECURITY_DASHBOARD.md', 'w') as f:
+            f.write(dashboard_content)
+        
+        # Generate metrics for badge
+        score = max(0, 100 - (security_metrics['critical_alerts'] * 25) - 
+                   (security_metrics['high_alerts'] * 10) - 
+                   (security_metrics['medium_alerts'] * 2) - 
+                   (security_metrics['low_alerts'] * 0.5) - 
+                   (security_metrics['dependency_alerts'] * 5))
+        
+        with open('security-score.json', 'w') as f:
+            json.dump({
+                'schemaVersion': 1,
+                'label': 'security score',
+                'message': f'{score:.1f}/100',
+                'color': 'brightgreen' if score >= 95 else 'green' if score >= 85 else 'yellow' if score >= 70 else 'orange' if score >= 50 else 'red'
+            }, f)
+        
+        print(f'Generated security dashboard with score: {score:.1f}/100')
+        "
+
+    - name: Commit and push dashboard
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Check if there are changes
+        if ! git diff --quiet SECURITY_DASHBOARD.md; then
+          git add SECURITY_DASHBOARD.md security-score.json
+          git commit -m "📊 Update security dashboard [automated]"
+          git push
+        else
+          echo "No changes to security dashboard"
+        fi
+
+    - name: Create security badge
+      uses: schneegans/dynamic-badges-action@v1.7.0
+      with:
+        auth: ${{ secrets.GITHUB_TOKEN }}
+        gistID: ${{ secrets.SECURITY_BADGE_GIST_ID }}
+        filename: security-score.json
+        label: Security Score
+        message: "Loading..."
+        color: blue

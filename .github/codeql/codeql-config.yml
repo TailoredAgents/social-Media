@@ -1,0 +1,35 @@
+name: "AI Social Media Agent Security Configuration"
+
+disable-default-queries: false
+
+queries:
+  - uses: security-and-quality
+  - uses: security-extended
+
+paths-ignore:
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/*.test.js"
+  - "**/*.test.jsx"
+  - "**/*.test.py"
+  - "**/node_modules/**"
+  - "**/venv/**"
+  - "**/__pycache__/**"
+  - "**/dist/**"
+  - "**/build/**"
+  - "**/coverage/**"
+
+# Custom security queries
+query-filters:
+  - exclude:
+      id: py/weak-sensitive-data-hashing
+      # Exclude if using proper password hashing libraries
+  - exclude:
+      id: js/hardcoded-credentials
+      # Exclude for test files and configuration examples
+
+# Include additional query packs for enhanced security
+packs:
+  - "codeql/python-queries"
+  - "codeql/javascript-queries"

@@ -1,0 +1,230 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-social-media-agent"
+version = "1.0.0"
+description = "Enterprise AI-powered social media content management platform with multi-agent content generation, semantic search, and advanced analytics"
+authors = [
+    {name = "Tailored Agents", email = "info@tailoredagents.com"},
+]
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+keywords = ["ai", "social-media", "content-management", "automation", "analytics", "crewai", "fastapi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Chat",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Topic :: Office/Business :: News/Diary",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+
+dependencies = [
+    # Core Web Framework
+    "fastapi==0.115.6",
+    "uvicorn[standard]==0.32.1",
+    
+    # Configuration & Environment
+    "python-dotenv==1.1.1",
+    "pydantic==2.11.7",
+    "pydantic-settings==2.10.1",
+    
+    # AI/ML Libraries
+    "openai==1.58.1",
+    "numpy==2.3.1",
+    
+    # Vector Search
+    "faiss-cpu==1.8.0",
+    
+    # CrewAI for multi-agent system
+    "crewai==0.148.0",
+    "crewai-tools==0.17.0",
+    
+    # Database & ORM
+    "sqlalchemy==2.0.36",
+    "alembic==1.14.0",
+    "psycopg2-binary==2.9.10",
+    
+    # Task Queue
+    "celery==5.4.0",
+    "redis==5.2.1",
+    
+    # Additional tools
+    "beautifulsoup4==4.12.3",
+    "requests==2.32.3",
+    "tweepy==4.14.0",
+    
+    # Authentication & Security
+    "python-jose[cryptography]==3.3.0",
+    "passlib[bcrypt]==1.7.4",
+    "python-multipart==0.0.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    # Development & Testing
+    "pytest==7.4.3",
+    "pytest-cov==4.0.0",
+    "pytest-asyncio==0.21.1",
+    "pytest-mock==3.12.0",
+    "pytest-env==1.1.5",
+    "pytest-timeout==2.3.1",
+    "httpx==0.25.2",
+    "factory-boy==3.3.1",
+    "faker==32.8.2",
+    "psutil==6.1.0",
+    
+    # Code Quality
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+    
+    # Security
+    "safety>=2.3.0",
+    "bandit>=1.7.0",
+]
+
+[project.urls]
+Homepage = "https://tailoredagents.com"
+Documentation = "https://github.com/tailoredagents/ai-social-media-agent"
+Repository = "https://github.com/tailoredagents/ai-social-media-agent.git"
+Issues = "https://github.com/tailoredagents/ai-social-media-agent/issues"
+Changelog = "https://github.com/tailoredagents/ai-social-media-agent/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.yaml", "*.yml", "*.json", "*.txt", "*.md"]
+
+# Black configuration for Python formatting
+[tool.black]
+line-length = 88
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+# isort configuration for import sorting
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["backend"]
+known_third_party = ["fastapi", "pydantic", "sqlalchemy", "celery", "redis", "openai", "crewai"]
+
+# MyPy configuration for type checking
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "faiss.*",
+    "crewai.*",
+    "tweepy.*",
+    "factory.*",
+]
+ignore_missing_imports = true
+
+# Pytest configuration
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "--verbose",
+    "--tb=short",
+    "--cov=backend",
+    "--cov-report=html:htmlcov",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=80",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "api: marks tests as API tests",
+    "auth: marks tests as authentication tests",
+    "database: marks tests requiring database",
+    "redis: marks tests requiring Redis",
+    "external: marks tests that require external services",
+]
+filterwarnings = [
+    "error",
+    "ignore::UserWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["backend"]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/venv/*",
+    "*/env/*",
+    "*/__pycache__/*",
+    "*/conftest.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+
+# Bandit security linting configuration
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+skips = ["B101", "B601"]  # Skip assert statements and shell injection (for testing)

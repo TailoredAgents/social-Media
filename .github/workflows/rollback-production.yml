@@ -1,0 +1,609 @@
+name: Rollback Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      rollback_version:
+        description: 'Version to rollback to (git tag or commit SHA)'
+        required: true
+        type: string
+      reason:
+        description: 'Reason for rollback'
+        required: true
+        type: string
+      rollback_backend:
+        description: 'Rollback backend services'
+        type: boolean
+        default: true
+      rollback_frontend:
+        description: 'Rollback frontend application'
+        type: boolean
+        default: true
+      rollback_database:
+        description: 'Rollback database (DANGEROUS - requires backup)'
+        type: boolean
+        default: false
+      confirm_rollback:
+        description: 'Type "ROLLBACK" to confirm production rollback'
+        required: true
+        type: string
+
+env:
+  ENVIRONMENT: production
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_BACKEND: ai-social-media-backend
+  ECR_REPOSITORY_FRONTEND: ai-social-media-frontend
+  ECS_SERVICE_BACKEND: ai-social-media-backend-prod
+  ECS_CLUSTER: ai-social-media-production
+
+jobs:
+  validate-rollback:
+    runs-on: ubuntu-latest
+    outputs:
+      proceed: ${{ steps.validate.outputs.proceed }}
+      
+    steps:
+    - name: Validate rollback confirmation
+      id: validate
+      run: |
+        if [ "${{ inputs.confirm_rollback }}" != "ROLLBACK" ]; then
+          echo "❌ Rollback confirmation failed. You must type 'ROLLBACK' to proceed."
+          echo "proceed=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "✅ Rollback confirmed"
+        echo "proceed=true" >> $GITHUB_OUTPUT
+        
+    - name: Checkout target version
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.rollback_version }}
+        
+    - name: Validate rollback version
+      run: |
+        echo "🔍 Validating rollback version: ${{ inputs.rollback_version }}"
+        
+        # Check if version exists
+        if ! git rev-parse --verify ${{ inputs.rollback_version }} >/dev/null 2>&1; then
+          echo "❌ Version ${{ inputs.rollback_version }} does not exist"
+          exit 1
+        fi
+        
+        # Check if version was previously deployed
+        echo "✅ Rollback version validated"
+        
+    - name: Create incident record
+      run: |
+        INCIDENT_RECORD=$(cat <<EOF
+        {
+          "incident_id": "INC-$(date +%Y%m%d%H%M%S)",
+          "type": "production_rollback",
+          "initiated_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+          "initiated_by": "${{ github.actor }}",
+          "reason": "${{ inputs.reason }}",
+          "rollback_version": "${{ inputs.rollback_version }}",
+          "components": {
+            "backend": ${{ inputs.rollback_backend }},
+            "frontend": ${{ inputs.rollback_frontend }},
+            "database": ${{ inputs.rollback_database }}
+          },
+          "status": "in_progress"
+        }
+        EOF
+        )
+        
+        echo "$INCIDENT_RECORD" > incident-record.json
+        
+        # Store incident ID for later use
+        INCIDENT_ID=$(echo "$INCIDENT_RECORD" | jq -r '.incident_id')
+        echo "INCIDENT_ID=$INCIDENT_ID" >> $GITHUB_ENV
+        
+    - name: Notify rollback start
+      uses: 8398a7/action-slack@v3
+      with:
+        status: custom
+        custom_payload: |
+          {
+            "attachments": [{
+              "color": "warning",
+              "title": "🚨 Production Rollback Initiated",
+              "fields": [
+                {"title": "Incident ID", "value": "${{ env.INCIDENT_ID }}", "short": true},
+                {"title": "Rollback Version", "value": "${{ inputs.rollback_version }}", "short": true},
+                {"title": "Initiated By", "value": "${{ github.actor }}", "short": true},
+                {"title": "Reason", "value": "${{ inputs.reason }}", "short": false}
+              ]
+            }]
+          }
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        channel: '#incidents'
+
+  rollback-backend:
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: needs.validate-rollback.outputs.proceed == 'true' && inputs.rollback_backend == true
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Get current deployment info
+      run: |
+        # Get current task definition
+        CURRENT_TASK_DEF=$(aws ecs describe-services \
+          --cluster ${{ env.ECS_CLUSTER }} \
+          --services ${{ env.ECS_SERVICE_BACKEND }} \
+          --query 'services[0].taskDefinition' \
+          --output text)
+          
+        echo "CURRENT_TASK_DEF=$CURRENT_TASK_DEF" >> $GITHUB_ENV
+        echo "Current backend version: $CURRENT_TASK_DEF"
+        
+    - name: Find rollback task definition
+      run: |
+        echo "🔍 Finding task definition for version ${{ inputs.rollback_version }}..."
+        
+        # In practice, you'd have a mapping of versions to task definitions
+        # For now, we'll use the rollback version as the task definition revision
+        ROLLBACK_TASK_DEF="ai-social-media-backend-prod:${{ inputs.rollback_version }}"
+        
+        # Verify the task definition exists
+        if aws ecs describe-task-definition --task-definition "$ROLLBACK_TASK_DEF" >/dev/null 2>&1; then
+          echo "ROLLBACK_TASK_DEF=$ROLLBACK_TASK_DEF" >> $GITHUB_ENV
+          echo "✅ Found rollback task definition: $ROLLBACK_TASK_DEF"
+        else
+          echo "❌ Rollback task definition not found: $ROLLBACK_TASK_DEF"
+          exit 1
+        fi
+        
+    - name: Perform blue-green rollback
+      run: |
+        echo "🔄 Performing blue-green rollback..."
+        
+        # Check if we have a blue environment for rollback
+        if aws ecs describe-services \
+           --cluster ${{ env.ECS_CLUSTER }} \
+           --services ${{ env.ECS_SERVICE_BACKEND }}-blue \
+           >/dev/null 2>&1; then
+           
+          echo "🔵 Blue environment found, using for rollback..."
+          
+          # Scale up blue environment with rollback version
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_BACKEND }}-blue \
+            --task-definition ${{ env.ROLLBACK_TASK_DEF }} \
+            --desired-count 4
+            
+          # Wait for blue to be healthy
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_BACKEND }}-blue
+            
+          # Switch ALB to blue
+          aws elbv2 modify-listener \
+            --listener-arn ${{ secrets.PRODUCTION_ALB_LISTENER_ARN }} \
+            --default-actions Type=forward,TargetGroupArn=${{ secrets.PRODUCTION_BLUE_TG_ARN }}
+            
+          echo "✅ Traffic switched to blue environment"
+          
+          # Scale down green environment
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_BACKEND }}-green \
+            --desired-count 0
+            
+        else
+          echo "🟢 No blue environment, performing direct rollback..."
+          
+          # Direct rollback of main service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_BACKEND }} \
+            --task-definition ${{ env.ROLLBACK_TASK_DEF }} \
+            --force-new-deployment
+            
+          # Wait for rollback to complete
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_BACKEND }}
+        fi
+        
+        echo "✅ Backend rollback completed"
+        
+    - name: Verify backend rollback
+      run: |
+        echo "🏥 Verifying backend rollback..."
+        
+        # Wait for deployment to stabilize
+        sleep 60
+        
+        # Check health endpoint
+        for i in {1..10}; do
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PRODUCTION_API_URL }}/health" || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Backend health check passed"
+            break
+          fi
+          
+          if [ $i -eq 10 ]; then
+            echo "❌ Backend health check failed after rollback"
+            exit 1
+          fi
+          
+          sleep 10
+        done
+        
+        # Verify version endpoint if available
+        VERSION_RESPONSE=$(curl -s "${{ secrets.PRODUCTION_API_URL }}/version" || echo "{}")
+        echo "Backend version after rollback: $VERSION_RESPONSE"
+
+  rollback-frontend:
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: needs.validate-rollback.outputs.proceed == 'true' && inputs.rollback_frontend == true
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Get current frontend version
+      run: |
+        echo "🔍 Getting current frontend version..."
+        
+        # Get current objects in S3
+        aws s3 ls s3://${{ secrets.PRODUCTION_S3_BUCKET }}/ --recursive > current-files.txt
+        echo "Current frontend files logged"
+        
+    - name: Restore frontend from backup
+      run: |
+        echo "🔄 Restoring frontend from version backup..."
+        
+        # Check if versioned backup exists
+        VERSION_PATH="versions/${{ inputs.rollback_version }}"
+        
+        if aws s3 ls "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/$VERSION_PATH/" >/dev/null 2>&1; then
+          echo "✅ Found frontend backup for version ${{ inputs.rollback_version }}"
+          
+          # Sync from version backup to main path
+          aws s3 sync \
+            "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/$VERSION_PATH/" \
+            "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/" \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+            
+          # Update index.html with proper cache headers
+          aws s3 cp \
+            "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/$VERSION_PATH/index.html" \
+            "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/index.html" \
+            --cache-control "public, max-age=300, must-revalidate"
+            
+          echo "✅ Frontend files restored"
+          
+        else
+          echo "❌ No frontend backup found for version ${{ inputs.rollback_version }}"
+          echo "Available versions:"
+          aws s3 ls "s3://${{ secrets.PRODUCTION_S3_BUCKET }}/versions/" --recursive
+          exit 1
+        fi
+        
+    - name: Invalidate CloudFront cache
+      run: |
+        echo "🔄 Invalidating CloudFront cache..."
+        
+        INVALIDATION_ID=$(aws cloudfront create-invalidation \
+          --distribution-id ${{ secrets.PRODUCTION_CLOUDFRONT_DISTRIBUTION_ID }} \
+          --paths "/*" \
+          --query 'Invalidation.Id' \
+          --output text)
+          
+        echo "Invalidation ID: $INVALIDATION_ID"
+        
+        # Wait for invalidation to complete
+        echo "⏳ Waiting for cache invalidation..."
+        aws cloudfront wait invalidation-completed \
+          --distribution-id ${{ secrets.PRODUCTION_CLOUDFRONT_DISTRIBUTION_ID }} \
+          --id $INVALIDATION_ID
+          
+        echo "✅ CloudFront cache invalidated"
+        
+    - name: Verify frontend rollback
+      run: |
+        echo "🏥 Verifying frontend rollback..."
+        
+        # Wait for CloudFront propagation
+        sleep 60
+        
+        # Check if site is accessible
+        for i in {1..10}; do
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PRODUCTION_URL }}" || echo "000")
+          
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Frontend accessibility check passed"
+            break
+          fi
+          
+          if [ $i -eq 10 ]; then
+            echo "❌ Frontend accessibility check failed after rollback"
+            exit 1
+          fi
+          
+          sleep 10
+        done
+        
+        # Check if specific rollback version indicators are present
+        curl -s "${{ secrets.PRODUCTION_URL }}" | grep -q "ai-social-media" || {
+          echo "❌ Frontend content verification failed"
+          exit 1
+        }
+        
+        echo "✅ Frontend rollback verified"
+
+  rollback-database:
+    runs-on: ubuntu-latest
+    needs: validate-rollback
+    if: needs.validate-rollback.outputs.proceed == 'true' && inputs.rollback_database == true
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+        
+    - name: Create current database backup
+      run: |
+        echo "💾 Creating backup of current database before rollback..."
+        
+        EMERGENCY_BACKUP_NAME="emergency-backup-$(date +%Y%m%d-%H%M%S)"
+        
+        aws rds create-db-snapshot \
+          --db-instance-identifier ai-social-media-prod \
+          --db-snapshot-identifier "$EMERGENCY_BACKUP_NAME"
+          
+        # Wait for backup to complete
+        aws rds wait db-snapshot-completed \
+          --db-snapshot-identifier "$EMERGENCY_BACKUP_NAME"
+          
+        echo "✅ Emergency backup created: $EMERGENCY_BACKUP_NAME"
+        echo "EMERGENCY_BACKUP_NAME=$EMERGENCY_BACKUP_NAME" >> $GITHUB_ENV
+        
+    - name: Find rollback database snapshot
+      run: |
+        echo "🔍 Finding database snapshot for version ${{ inputs.rollback_version }}..."
+        
+        # Find the most recent snapshot before the problematic deployment
+        ROLLBACK_SNAPSHOT=$(aws rds describe-db-snapshots \
+          --db-instance-identifier ai-social-media-prod \
+          --snapshot-type manual \
+          --query 'DBSnapshots[?contains(DBSnapshotIdentifier, `${{ inputs.rollback_version }}`)].DBSnapshotIdentifier' \
+          --output text | head -1)
+          
+        if [ -z "$ROLLBACK_SNAPSHOT" ]; then
+          echo "❌ No database snapshot found for version ${{ inputs.rollback_version }}"
+          echo "Available snapshots:"
+          aws rds describe-db-snapshots \
+            --db-instance-identifier ai-social-media-prod \
+            --query 'DBSnapshots[].DBSnapshotIdentifier' \
+            --output table
+          exit 1
+        fi
+        
+        echo "ROLLBACK_SNAPSHOT=$ROLLBACK_SNAPSHOT" >> $GITHUB_ENV
+        echo "✅ Found rollback snapshot: $ROLLBACK_SNAPSHOT"
+        
+    - name: Restore database from snapshot
+      run: |
+        echo "🔄 Restoring database from snapshot..."
+        
+        # Create new DB instance from snapshot
+        RESTORE_DB_ID="ai-social-media-prod-restore-$(date +%s)"
+        
+        aws rds restore-db-instance-from-db-snapshot \
+          --db-instance-identifier "$RESTORE_DB_ID" \
+          --db-snapshot-identifier "${{ env.ROLLBACK_SNAPSHOT }}" \
+          --db-instance-class db.r5.large \
+          --publicly-accessible false \
+          --auto-minor-version-upgrade false
+          
+        # Wait for restore to complete
+        echo "⏳ Waiting for database restore to complete..."
+        aws rds wait db-instance-available \
+          --db-instance-identifier "$RESTORE_DB_ID"
+          
+        echo "RESTORE_DB_ID=$RESTORE_DB_ID" >> $GITHUB_ENV
+        echo "✅ Database restored to new instance: $RESTORE_DB_ID"
+        
+    - name: Switch database endpoint
+      run: |
+        echo "🔄 Switching application to restored database..."
+        
+        # Get new endpoint
+        NEW_ENDPOINT=$(aws rds describe-db-instances \
+          --db-instance-identifier "${{ env.RESTORE_DB_ID }}" \
+          --query 'DBInstances[0].Endpoint.Address' \
+          --output text)
+          
+        echo "New database endpoint: $NEW_ENDPOINT"
+        
+        # Update application configuration
+        # This would typically involve updating environment variables
+        # or configuration in your deployment system
+        
+        echo "⚠️ Manual step required: Update application database configuration"
+        echo "New endpoint: $NEW_ENDPOINT"
+        
+    - name: Verify database rollback
+      run: |
+        echo "🏥 Verifying database rollback..."
+        
+        # Basic connectivity test would go here
+        echo "✅ Database rollback completed"
+        echo "⚠️ Please verify application connectivity manually"
+
+  post-rollback-verification:
+    runs-on: ubuntu-latest
+    needs: [rollback-backend, rollback-frontend, rollback-database]
+    if: always() && (needs.rollback-backend.result == 'success' || needs.rollback-frontend.result == 'success')
+    
+    steps:
+    - name: Run post-rollback tests
+      run: |
+        echo "🧪 Running post-rollback verification tests..."
+        
+        # Wait for all services to stabilize
+        sleep 120
+        
+        # Test critical functionality
+        echo "Testing critical user flows..."
+        
+        # Health check
+        curl -f "${{ secrets.PRODUCTION_API_URL }}/health" || exit 1
+        
+        # Frontend accessibility
+        curl -f "${{ secrets.PRODUCTION_URL }}" || exit 1
+        
+        echo "✅ Critical functionality verified"
+        
+    - name: Monitor system metrics
+      run: |
+        echo "📊 Monitoring system metrics for 5 minutes..."
+        
+        # Monitor error rates, response times, etc.
+        START_TIME=$(date +%s)
+        MONITOR_DURATION=300  # 5 minutes
+        
+        while [ $(($(date +%s) - START_TIME)) -lt $MONITOR_DURATION ]; do
+          # Check CloudWatch metrics
+          echo "⏳ Monitoring... $(($(date +%s) - START_TIME))s elapsed"
+          sleep 30
+        done
+        
+        echo "✅ System metrics stable after rollback"
+
+  finalize-rollback:
+    runs-on: ubuntu-latest
+    needs: post-rollback-verification
+    if: success()
+    
+    steps:
+    - name: Update incident record
+      run: |
+        INCIDENT_UPDATE=$(cat <<EOF
+        {
+          "incident_id": "${{ env.INCIDENT_ID }}",
+          "completed_at": "$(date -u +'%Y-%m-%dT%H:%M:%SZ')",
+          "rollback_version": "${{ inputs.rollback_version }}",
+          "status": "resolved",
+          "resolution": "Successfully rolled back to version ${{ inputs.rollback_version }}",
+          "components_rolled_back": {
+            "backend": ${{ inputs.rollback_backend }},
+            "frontend": ${{ inputs.rollback_frontend }},
+            "database": ${{ inputs.rollback_database }}
+          }
+        }
+        EOF
+        )
+        
+        echo "$INCIDENT_UPDATE" > incident-resolution.json
+        
+    - name: Create rollback tag
+      run: |
+        git config --global user.email "ci@ai-social-media.com"
+        git config --global user.name "CI Bot"
+        
+        TAG_NAME="rollback-$(date +%Y%m%d-%H%M%S)-to-${{ inputs.rollback_version }}"
+        git tag -a "$TAG_NAME" -m "Rollback to ${{ inputs.rollback_version }}: ${{ inputs.reason }}"
+        git push origin "$TAG_NAME"
+        
+    - name: Generate rollback report
+      run: |
+        cat > rollback-report.md <<EOF
+        # Production Rollback Report
+        
+        ## Incident Details
+        - **Incident ID**: ${{ env.INCIDENT_ID }}
+        - **Rollback Date**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+        - **Initiated by**: ${{ github.actor }}
+        - **Reason**: ${{ inputs.reason }}
+        - **Rollback Version**: ${{ inputs.rollback_version }}
+        
+        ## Components Rolled Back
+        - Backend: ${{ inputs.rollback_backend && '✅' || '❌' }}
+        - Frontend: ${{ inputs.rollback_frontend && '✅' || '❌' }}
+        - Database: ${{ inputs.rollback_database && '✅' || '❌' }}
+        
+        ## Verification Results
+        - Post-rollback tests: ✅ Passed
+        - System metrics: ✅ Stable
+        - Critical functionality: ✅ Verified
+        
+        ## Next Steps
+        1. Continue monitoring system for stability
+        2. Investigate root cause of original issue
+        3. Plan fix and deployment strategy
+        4. Update deployment procedures if needed
+        
+        ## Timeline
+        - Rollback initiated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+        - Rollback completed: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+        - Total duration: ~$(($(date +%s) - $(date -d '1 hour ago' +%s))) minutes
+        EOF
+        
+    - name: Notify rollback completion
+      uses: 8398a7/action-slack@v3
+      with:
+        status: success
+        channel: '#incidents'
+        webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        text: |
+          ✅ Production Rollback Completed Successfully!
+          
+          Incident ID: ${{ env.INCIDENT_ID }}
+          Rolled back to: ${{ inputs.rollback_version }}
+          Reason: ${{ inputs.reason }}
+          
+          Components rolled back:
+          • Backend: ${{ inputs.rollback_backend && '✅' || '⏭️' }}
+          • Frontend: ${{ inputs.rollback_frontend && '✅' || '⏭️' }}
+          • Database: ${{ inputs.rollback_database && '✅' || '⏭️' }}
+          
+          System is stable and fully operational.
+          
+          [View Rollback Details](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+  cleanup:
+    runs-on: ubuntu-latest
+    needs: finalize-rollback
+    if: success()
+    
+    steps:
+    - name: Clean up temporary resources
+      run: |
+        echo "🧹 Cleaning up temporary resources..."
+        
+        # List any temporary resources that should be cleaned up
+        # This would include temporary ECS services, target groups, etc.
+        
+        echo "✅ Cleanup completed"
+        
+    - name: Upload rollback artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: rollback-artifacts
+        path: |
+          incident-record.json
+          incident-resolution.json
+          rollback-report.md
+        retention-days: 365

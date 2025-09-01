@@ -1,0 +1,54 @@
+# Prometheus configuration for AI Social Media Content Agent
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  - "alert_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+scrape_configs:
+  # FastAPI application metrics
+  - job_name: 'ai-social-media-backend'
+    static_configs:
+      - targets: ['localhost:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    
+  # Node.js frontend metrics (if enabled)
+  - job_name: 'ai-social-media-frontend'
+    static_configs:
+      - targets: ['localhost:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    
+  # Database metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['localhost:5432']
+    
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:6379']
+      
+  # System metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['localhost:9100']
+    scrape_interval: 5s
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - localhost:9093
+
+# Remote write configuration (for cloud monitoring)
+remote_write:
+  - url: "https://prometheus.example.com/api/v1/write"
+    basic_auth:
+      username: "prometheus"
+      password: "secret"
